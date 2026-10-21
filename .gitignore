@@ -1,0 +1,39 @@
+# Local secrets and environment files
+.env
+.env.*
+!.env.example
+
+# Datasets and local clinical data
+data/
+*.csv
+*.parquet
+*.jsonl
+*.dump
+*.bak
+*.db
+*.sqlite
+*.sqlite3
+
+# Local environments and generated Python files
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Logs and temporary/build output
+*.log
+tmp/
+temp/
+build/
+dist/
+
+# Local-only materials
+instructor_notes/
+.claude/
+.github/agents/
+PORTFOLIO_IMPROVEMENT_PROGRESS.md
+uv_instructions.txt
