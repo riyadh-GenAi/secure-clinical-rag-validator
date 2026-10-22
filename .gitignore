@@ -2,6 +2,14 @@
 .env
 .env.*
 !.env.example
+secrets/
+credentials/
+credentials.json
+service-account*.json
+*.pem
+*.key
+*.p12
+*.pfx
 
 # Datasets and local clinical data
 data/

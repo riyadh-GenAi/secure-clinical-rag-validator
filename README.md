@@ -1,113 +1,177 @@
 # Secure Clinical RAG Validator
 
-A portfolio adaptation of a clinical-record retrieval-augmented generation (RAG) prototype. It demonstrates how a Streamlit interface, FastAPI service, PostgreSQL with pgvector, local embeddings, Presidio redaction, and NeMo Guardrails can be connected in a local Docker Compose workflow.
+A portfolio prototype for patient-filtered clinical-record retrieval and answer generation, built with Streamlit, FastAPI, PostgreSQL/pgvector, local embeddings, Presidio redaction, and NeMo Guardrails.
 
-This is an educational software prototype. It is not clinically validated, is not intended for diagnosis or treatment decisions, and is not approved for real patient information.
+## Prototype status
 
-## Project background
+This is an educational software prototype, not a production clinical system. It is not clinically validated, does not provide medical advice, and is not a clinical decision-making system.
 
-This repository is based on the project provided by my instructor, who gave permission for me to use it as a portfolio repository. The original project is available at [Secure-EHR-Insight-Clinical-Validator](https://github.com/nimowhyca/Secure-EHR-Insight-Clinical-Validator). This attribution does not grant rights to third-party data or materials excluded from this repository.
+## Demo video
 
-No license file is included. Do not assume that this code is available for reuse beyond the permission described above.
+[Watch the clinical RAG prototype demo](docs/demos/clinical-rag-demo.mp4). The video illustrates a local prototype workflow; it does not establish retrieval quality, clinical accuracy, or safety.
+
+## Screenshots
+
+![Clinical record chat interface with a patient filter, example questions, and generated answers](docs/images/clinical-chat.png)
+
+*Main chat view showing the patient filter, example conversation, and on-screen AI disclaimer.*
+
+![Expanded Behind the Answer panel with retrieved record snippets and technology descriptions](docs/images/answer-transparency.png)
+
+*Transparency panel showing the retrieved context and descriptions of the workflow technologies. The snippets are not independently verified citations.*
+
+![Example guardrail response and missing-information answer in the chat interface](docs/images/safety-behavior.png)
+
+*Examples of a guardrail response and a response indicating that requested information was not found; these are demonstrations, not guarantees.*
+
+The example patient IDs are synthetic. Other clinical-looking content in these media has not been independently confirmed as synthetic; review the assets and their publication rights before sharing them publicly.
+
+## Problem and motivation
+
+Clinical-record question answering combines sensitive data, retrieval, and generated responses. This project demonstrates a prototype workflow that retrieves encounter fields for a selected patient filter, presents redacted context to a language-model workflow, and exposes retrieved snippets in a transparency panel.
+
+The prototype makes this flow inspectable, but does not independently establish that retrieved records are relevant or that answers are accurate or clinically safe.
+
+## Implemented capabilities
+
+- A Streamlit chat interface that lists patients with embeddings and resets the session transcript when the selected patient changes.
+- A FastAPI chat endpoint that validates requests and uses the latest user message, rather than client-supplied conversation history, for retrieval and generation.
+- PostgreSQL/pgvector nearest-neighbor retrieval filtered by the supplied patient ID, returning up to five embedded encounter rows.
+- Local question embeddings using Sentence Transformers and `NeuML/bioclinical-modernbert-base-embeddings`.
+- Best-effort Presidio redaction of retrieved display fields and the latest question before generation.
+- NeMo Guardrails instructions and a fixed insufficient-evidence response when no displayable retrieved context is available.
+- An expandable “Behind the Answer” panel displaying returned snippets and workflow notes.
+
+These are implementation details, not guarantees of complete redaction, privacy, retrieval quality, or answer safety.
 
 ## Architecture
 
-```text
-Streamlit UI
-  | selected patient ID and latest question
-  v
-FastAPI
-  | local question embedding
-  v
-PostgreSQL + pgvector
-  | up to five nearest records filtered by patient ID
-  v
-Presidio redaction -> NeMo Guardrails -> configured Groq-compatible LLM
-  | answer and redacted retrieved snippets
-  v
-Streamlit response and transparency panel
+See [docs/architecture.md](docs/architecture.md) for component responsibilities, data flow, trust boundaries, and known limitations.
+
+```mermaid
+flowchart LR
+    User["User"] --> UI["Streamlit UI"]
+    UI -->|patient filter and latest question| API["FastAPI chat API"]
+    API -->|embed question locally| Embed["Sentence Transformers"]
+    Embed -->|query vector| DB[("PostgreSQL with pgvector")]
+    API -->|patient-filtered vector search, up to 5 rows| DB
+    DB -->|candidate encounter fields| Redact["Presidio redaction"]
+    Redact -->|redacted context and question| Rails["NeMo Guardrails"]
+    Rails -->|configured prompt| LLM["External Groq-compatible endpoint"]
+    LLM -->|generated response| API
+    Redact -->|redacted snippets| API
+    API -->|answer and snippets| UI
+    UI -->|answer and transparency panel| User
 ```
 
-- **Streamlit** provides the patient selector and chat interface. Its session transcript is cleared when the selected patient changes.
-- **FastAPI** validates requests, retrieves context for the supplied patient filter, and sends only the latest user question and current retrieved context to Guardrails. Previous client-supplied messages are discarded.
-- **PostgreSQL and pgvector** store encounter fields and perform similarity search over embeddings, limited to five candidate rows for the selected patient.
-- **Sentence Transformers** uses the configured BioClinical ModernBERT embedding model locally. The latest question is embedded before it is redacted.
-- **Presidio** attempts to redact configured identifiers from retrieved context and the latest question before model generation. Redaction is best effort, not a guarantee.
-- **NeMo Guardrails** applies configured instructions to the language-model interaction. It cannot guarantee correct, safe, or evidence-grounded output.
-- **Groq-compatible provider** generates responses from the redacted prompt. The prompt is sent to an external provider.
+Embeddings for stored encounter rows are generated separately by an ingestion script. Patient filtering is a retrieval constraint, not authentication or authorization.
 
-The chat API returns a fixed insufficient-evidence response when no retrieved rows contain displayable fields. Retrieved snippets shown in the UI are context, not independently verified citations.
+## Technology stack
 
-## Requirements
+| Area | Technology |
+| --- | --- |
+| UI | Streamlit |
+| API | FastAPI, Pydantic, Uvicorn |
+| Database and vector search | PostgreSQL, pgvector, SQLAlchemy |
+| Embeddings | Sentence Transformers, BioClinical ModernBERT |
+| Redaction and model workflow | Presidio, NeMo Guardrails |
+| Configured language-model endpoint | Groq-compatible endpoint configured for `openai/gpt-oss-20b` |
+| Local orchestration | Docker Compose |
 
-- Docker Engine or Docker Desktop with Docker Compose v2
-- A Groq API key for model responses
-- Network access and disk space for image dependencies and model downloads on first startup
+## Quick start (Windows PowerShell)
 
-No host Python installation is required for the documented Docker workflow.
+Prerequisites include Docker Desktop or Docker Engine with Docker Compose v2, network access, and disk space for application dependencies and model downloads. No host Python installation is required for this Compose workflow.
 
-## Configure and start
-
-From PowerShell in this repository:
+From the repository root:
 
 ```powershell
 Copy-Item .env.example .env
 ```
 
-Edit `.env` locally and set a strong, unique `DB_PASSWORD` and your provider key in `OPENAI_API_KEY`. The latter variable name is retained by the application configuration although the configured endpoint is Groq-compatible. Never commit `.env` or share its values.
-
-Start the services:
+Edit `.env` locally and replace the database-password and provider-key placeholders. Then start the services:
 
 ```powershell
 docker compose up --build
 ```
 
-Open:
+When ready:
 
 - Streamlit: <http://localhost:8501>
 - FastAPI docs: <http://localhost:8000/docs>
 
-Compose binds the service ports to loopback for local development. This is not authentication or patient authorization. Do not expose the services to a network without a separately reviewed access-control and deployment design.
+Compose binds ports to loopback for local development. This does not provide authentication or patient authorization; do not expose the services to a network without a separately reviewed access-control and deployment design.
 
-## Data prerequisites
+### Environment configuration
 
-The clinical dataset is **not included**. The ingestion script expects a locally available CSV at `data/MIMIC_IV_Trasncript.csv` with columns compatible with `src/database/schema.sql`. Do not put real patient information in this public repository, screenshots, test fixtures, prompts, or logs.
+`.env.example` contains placeholders for secrets and local defaults for other values. Compose requires `DB_PASSWORD` and `OPENAI_API_KEY`; the latter variable name is retained although the configured endpoint is Groq-compatible. Keep `.env` local and never publish credentials.
 
-Use only data you are independently authorized to access and process. MIMIC-IV access is governed by [PhysioNet's MIMIC-IV page and terms](https://physionet.org/content/mimiciv/3.1/), including credentialing and data-use requirements. This repository does not grant data access or redistribution rights.
+The API can also use `POSTGRES_URL` outside the Compose configuration. In Compose, the app container uses the `db` service as its database host.
 
-The Kaggle listing used as a project reference was published by Isaac Ritharson: [MIMIC-IV cleaned medical transcripts](https://www.kaggle.com/datasets/isaacritharson/mimic-iv-cleaned-medical-transcripts). Kaggle metadata lists an MIT license and identifies MIMIC-IV as its source. That listing is attribution, not verification that underlying MIMIC-derived material may be redistributed under those terms. The CSV is not included; verify all applicable source-data terms before obtaining or using any copy.
+## Dataset provenance and access
 
-The ingestion script expects that specific transformed CSV and there is no converter from the original PhysioNet release in this repository. After arranging a compatible dataset you are authorized to use, create the `data` directory and place the file there. The directory is mounted read-only into the app container. On a fresh database, run these commands once and in order:
+The dataset is not included. The ingestion script expects a separately supplied, authorized CSV at `data/MIMIC_IV_Trasncript.csv` with columns compatible with `src/database/schema.sql`. There is no converter from the original PhysioNet release in this repository.
 
-```powershell
-docker compose exec app python scripts/01_ingest_baseline_data.py
-docker compose exec app python scripts/02_verify_ingestion.py
-docker compose exec app python scripts/03_apply_vector_schema.py
-docker compose exec app python scripts/04_generate_embeddings.py
-docker compose exec app python scripts/05_test_vector_search.py
-```
+The project references the [MIMIC-IV cleaned medical transcripts Kaggle listing](https://www.kaggle.com/datasets/isaacritharson/mimic-iv-cleaned-medical-transcripts?resource=download) and [MIMIC-IV on PhysioNet](https://physionet.org/content/mimiciv/3.1/). Data access and use are subject to the applicable source requirements. Listing metadata is not independent confirmation of redistribution rights for underlying source data. This repository does not provide access or permission to redistribute data. Obtain and use data only when independently authorized; do not add the dataset or patient records here.
 
-Ingestion appends records and is not idempotent; repeating it can create duplicates. Embedding generation processes up to 100 unembedded rows per run. The database volume persists across normal restarts. Do not remove it if you need to preserve local database contents.
+For a fresh database, the documented ingestion, schema, embedding, and vector-search scripts are run in order. Ingestion appends records and is not idempotent; embedding generation processes up to 100 unembedded rows per invocation. See the scripts in `scripts/` before running them.
 
 ## Tests
 
-Run the unit tests in the app container:
+The repository's unit tests use mocks and synthetic fixtures. They cover request validation, patient-filter query parameters, redaction and prompt construction, insufficient-evidence behavior, response/error handling, the transparency panel, and chat-state reset. They do not establish live database retrieval, semantic relevance, Presidio detection quality, live provider behavior, complete UI behavior, clinical validity, or regulatory compliance.
+
+The focused test files passed in the previous local check:
+
+- `test_answer_transparency.py`: 2 tests passed.
+- `test_ui_chat_state.py`: 3 tests passed.
+
+Full test discovery did **not** complete: `test_api_chat.py` could not import because FastAPI was unavailable in that local environment. Do not interpret the focused results as a passing full suite. With dependencies available and Compose running, the documented command is:
 
 ```powershell
 docker compose exec app python -m unittest discover -s tests -v
 ```
 
-The included unit tests use synthetic IDs and fixture values. They do not require or include the clinical CSV. The suite does not validate live PostgreSQL retrieval, actual Presidio detection quality, semantic relevance, live model responses, or full UI behavior.
+The separate `scripts/06_test_guardrails.py` sends prompts to the configured external provider and may incur usage; it is not part of the unit-test command.
 
-The optional `scripts/06_test_guardrails.py` sends test prompts to the configured model provider and may incur provider usage. It is not part of the unit-test command.
+## Security, privacy, and limitations
 
-## Responsible use and limitations
+- **No user authentication or authorization:** a client-supplied patient ID filters retrieval but does not establish permission to access those records.
+- **Best-effort redaction:** Presidio may miss sensitive content. The question is embedded before redaction, and generated answers are not post-redacted.
+- **Guardrails are not guarantees:** NeMo instructions cannot guarantee factual, evidence-grounded, or safe answers.
+- **External model processing:** prompts and redacted context are sent to the configured external Groq-compatible endpoint. Provider handling and retention are not verified by this repository.
+- **Unvalidated retrieval:** up to five vector-nearest records are selected without a calibrated relevance threshold or independent relevance assessment. Displayed snippets are context, not verified citations.
+- **Not for clinical use:** the prototype is not clinically validated, security-certified, or established as compliant with healthcare regulations. Do not use it for medical decisions or real patient information.
 
-- There is no authentication or authorization. A client-supplied patient ID is used as a retrieval filter; that does not establish that a caller may access the patient.
-- Retrieval selects at most five nearest records and has no calibrated relevance threshold or independent semantic-relevance check.
-- The question is embedded locally before redaction. Presidio recognizers can miss identifiers, and generated answers are not post-redacted.
-- Guardrail instructions do not ensure factual accuracy or prevent unsupported content.
-- Prompts are sent to an external model provider. Provider data handling and retention are not verified here.
-- The project has not been clinically validated, security-certified, or established as compliant with healthcare regulations. It is not production-ready.
+## Repository structure
 
-Do not use this prototype to make clinical decisions or process real patient information.
+```text
+.
+├── docs/
+│   ├── architecture.md
+│   ├── demos/
+│   │   ├── README.md
+│   │   └── clinical-rag-demo.mp4
+│   └── images/
+│       ├── answer-transparency.png
+│       ├── clinical-chat.png
+│       └── safety-behavior.png
+├── scripts/
+├── src/
+├── tests/
+├── .env.example
+├── .gitignore
+├── compose.yaml
+├── Dockerfile
+├── requirements.txt
+└── start.sh
+```
+
+## More documentation
+
+- [Architecture](docs/architecture.md)
+- [Demo guide](docs/demos/README.md)
+- [Docker Compose configuration](compose.yaml)
+- [Dockerfile](Dockerfile)
+
+## Attribution and licensing
+
+This portfolio repository adapts an instructor-provided project with permission to use it as a portfolio repository. Attribution does not grant rights to third-party data or excluded materials. No license is included; do not assume that the code or materials may be reused or redistributed without confirming applicable rights.
