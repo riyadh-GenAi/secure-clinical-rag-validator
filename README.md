@@ -174,4 +174,4 @@ The separate `scripts/06_test_guardrails.py` sends prompts to the configured ext
 
 ## Attribution and licensing
 
-This portfolio repository adapts an instructor-provided project with permission to use it as a portfolio repository. Attribution does not grant rights to third-party data or excluded materials. No license is included; do not assume that the code or materials may be reused or redistributed without confirming applicable rights.
+ Attribution does not grant rights to third-party data or excluded materials. No license is included; do not assume that the code or materials may be reused or redistributed without confirming applicable rights.
